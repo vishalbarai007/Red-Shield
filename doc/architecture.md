@@ -1,16 +1,16 @@
-# Cyber-Cerberus: Systems Architecture & Technical Blueprint
+# Cyber-Cerberus (RedShield): Systems Architecture & Technical Blueprint
 
 ## 1. System Overview
 
-**Cyber-Cerberus** is a locally-hosted, multi-modal Red Team Operations Suite designed to augment and accelerate offensive cyber operations. Built to meet the requirements of modern penetration testers, security researchers, and adversary simulation teams, Cyber-Cerberus unifies live streaming terminal execution, real-time vulnerability report synthesis, autonomous reconnaissance, and hands-free voice operations under a centralized, dark-mode command center.
+**Cyber-Cerberus** (incorporating the **RedShield Exploitation Sandbox & Security Log Parsing (SLM)** engine) is a locally-hosted, multi-modal Red Team Operations Suite and controlled security verification platform. It bridges the gap between running isolated diagnostic tools and obtaining auditable, structured vulnerability intelligence—without giving autonomous decision-making power to an AI.
 
-The platform employs a decoupled **Client-Server Architecture** utilizing:
+The platform employs a decoupled **Client-Server & Ephemeral Sandbox Architecture** utilizing:
 - **Frontend Presentation Layer**: Next.js 16 (React 19, TypeScript, Tailwind CSS, App Router) running on `http://localhost:3000`.
-- **Backend Service & C2 Bridge**: Python 3.12+ (FastAPI, Starlette ASGI, Python-SocketIO) running on `http://localhost:5000`.
-- **Real-Time Streaming Bridge**: Socket.IO over ASGI/WebSockets with automatic fallback to long-polling and sub-millisecond event delivery.
-- **Embedded Interactive Subsystems**:
-  - `xterm.js` with `xterm-addon-fit` for bidirectional command execution and real-time streaming.
-  - `@monaco-editor/react` for vulnerability reporting and JSON/Markdown payload authoring.
+- **Backend Service, Policy Gate & Sandbox Controller**: Python 3.12+ (FastAPI, Starlette ASGI, `python-socketio`, `docker-py`, SQLite) running on `http://localhost:5000`.
+- **Decoupled Authorization Policy Gate (`backend/app/core/policy_gate.py`)**: Blocks unverified, internal metadata (`169.254.169.254`), or unauthorized external targets with `403 Target Blocked` before any container is provisioned.
+- **Hardened Ephemeral Containers (`docker/tools/{sqlmap,xsstrike,ffuf}`)**: Non-root (`sandboxuser`), read-only root filesystem (`read_only=True`), dropped Linux capabilities (`cap_drop=["ALL"]`), `no-new-privileges:true`, `mem_limit="512m"`, and `cpu_quota=50000` (0.5 CPU).
+- **Real-Time Dual Multiplexing Bridge**: Native WebSocket (`/ws/sandbox/{session_id}`) + Socket.IO over ASGI streaming raw `stdout`/`stderr` chunks to `xterm.js` while accumulating an in-memory buffer for post-execution analysis.
+- **Local SLM Evidence Extraction Engine (`backend/app/services/slm_engine.py` & `slm_parser.py`)**: Sanitizes ANSI escape sequences (`log_sanitizer.py`), applies a constrained zero-hallucination prompt to a local Small Language Model (`Qwen/Qwen2.5-3B-Instruct` or `meta-llama/Llama-3.2-3B-Instruct` fine-tuned via 4-bit QLoRA `r=16, alpha=32`), and outputs a validated `SLMVulnerabilityReport` JSON mapped to CVE, CWE, and MITRE ATT&CK.
 
 ```mermaid
 graph TD
@@ -20,49 +20,45 @@ graph TD
         Sidebar["Sidebar (Recon / Exploit / Voice)"]
         Hook["useSocket Hook (State & Latency)"]
         
-        subgraph "Exploitation Engine View"
-            TermComp["xterm.js Container (FitAddon)"]
-            MonacoComp["Monaco Editor (Markdown / JSON)"]
+        subgraph "Exploitation Sandbox View"
+            TermComp["TerminalViewer.tsx (xterm.js + Control Panel + SIGKILL)"]
+            ReportComp["VulnerabilityReport.tsx (SLM Audit Card + Monaco + Phase 5 Metrics)"]
         end
     end
 
     subgraph "Transport & Bridge Layer"
-        WSS["WebSocket / Socket.IO Protocol"]
-        REST["HTTP REST Endpoints (CORS: :3000)"]
+        WSS["Socket.IO + Native WS (/ws/sandbox/{session_id})"]
+        REST["HTTP REST Endpoints (/api/v1/sandbox/*)"]
     end
 
-    subgraph "Backend Layer (FastAPI + ASGI)"
-        ASGI["Socket.IO ASGI Layer (port 5000)"]
-        FastAPIApp["FastAPI Core Application"]
-        Router["REST API Router (/health, /api/v1)"]
-        EventDispatcher["Socket.IO Event Handlers"]
-        
-        subgraph "Core Backend Services"
-            TerminalHandler["Terminal Shell Streamer"]
-            HeartbeatHandler["Ping / Pong Latency Engine"]
-            ReconEngine["Recon & Asset Scout (Modular)"]
-            VoiceEngine["Voice Sentinel Dispatcher (Modular)"]
-        end
+    subgraph "Backend Layer (FastAPI + ASGI :5000)"
+        PolicyGate["Decoupled Authorization Policy Gate (SQLite)"]
+        SandboxSvc["SandboxOrchestrationService (sandbox_service.py)"]
+        DockerMgr["DockerSandboxManager (docker_manager.py)"]
+        Sanitizer["ANSI Log Sanitizer & Windowing (log_sanitizer.py)"]
+        SLMEngine["Local SLM Parser (Qwen-2.5-3B / Llama-3.2-3B QLoRA)"]
+    end
+
+    subgraph "Ephemeral Docker Sandbox (bridge / non-root)"
+        Containers["Hardened Diagnostic Containers (512MB RAM, 0.5 CPU, read_only, cap_drop=ALL)"]
     end
 
     UI --> Nav
     UI --> Sidebar
     UI --> TermComp
-    UI --> MonacoComp
-    
-    Hook <--> WSS
-    UI --> REST
-    
-    WSS <--> ASGI
-    REST <--> FastAPIApp
-    
-    ASGI --> EventDispatcher
-    EventDispatcher --> TerminalHandler
-    EventDispatcher --> HeartbeatHandler
-    EventDispatcher --> ReconEngine
-    EventDispatcher --> VoiceEngine
-    
-    FastAPIApp --> Router
+    UI --> ReportComp
+    TermComp --> REST
+    TermComp <--> WSS
+    ReportComp --> REST
+    REST --> PolicyGate
+    PolicyGate -->|403 Blocked or Verified| SandboxSvc
+    SandboxSvc --> DockerMgr
+    DockerMgr --> Containers
+    Containers -->|stdout/stderr| WSS
+    Containers -->|Raw Log Buffer| Sanitizer
+    Sanitizer --> SLMEngine
+    SLMEngine -->|Structured JSON Report| PolicyGate
+    SLMEngine -->|Broadcast Report| WSS
 ```
 
 ---
@@ -71,124 +67,51 @@ graph TD
 
 ### 2.1 Frontend Presentation Tier (`/frontend`)
 
-The frontend is constructed using Next.js 16 utilizing the App Router architecture, with strict client-side boundaries (`'use client'`) for browser-only DOM libraries.
+1. **Sandbox Terminal & Execution Control Panel (`src/components/TerminalViewer.tsx`)**:
+   - Mounts `xterm.js` and `xterm-addon-fit` dynamically (`'use client'`).
+   - Provides the **Execution Control Panel**:
+     - Target Scope Preset Picker & URL input (`http://juice-shop.local`, `http://dvwa.local`, or unauthorized metadata test case).
+     - Diagnostic Module Selector (`sqlmap` SQLi Audit, `xsstrike` XSS Audit, `ffuf` SSRF/Surface Audit).
+     - Scan Profile selector (`vulnerable` vs `benign`).
+     - **LAUNCH SANDBOX** (`POST /api/v1/sandbox/launch`) and **KILLSWITCH (SIGKILL)** (`POST /api/v1/sandbox/{session_id}/kill`).
+   - Connects directly to `/ws/sandbox/{session_id}` to stream real-time container logs into `xterm.js`.
 
-1. **State & Connection Management (`src/hooks/useSocket.ts`)**:
-   - Manages the lifecycle of the Socket.IO client instance.
-   - Monitors connection states: `connected`, `connecting`, and `disconnected`.
-   - Executes periodic heartbeat pings (every 10 seconds) measuring round-trip time (RTT in milliseconds).
-   - Provides clean unmount and automatic reconnection logic.
-
-2. **Command Center Navigation (`src/components/layout/Navbar.tsx` & `Sidebar.tsx`)**:
-   - **Navbar**: Displays suite branding, active operational module, target scope, manual ping diagnostics, and a dynamic status badge (`🟢 Connected (Xms)` / `🔴 Disconnected`).
-   - **Sidebar**: Provides tab navigation across three core operational operational paradigms:
-     - 🔍 **Target Recon**: Attack surface mapping, exposed port census, and asset identification.
-     - 🎯 **Exploitation Engine**: Live split-screen execution console and report authoring.
-     - 🎙️ **Voice Sentinel**: Voice command recognition, acoustic spectrogram, and hotword dispatch.
-
-3. **Live Streaming Terminal (`src/components/terminal/XTerminal.tsx`)**:
-   - Integrates `xterm.js` wrapped in a dynamic container with responsive resizing managed via `xterm-addon-fit`.
-   - Implements custom cyberpunk Dracula/Monokai color themes with cursor blinking and customized ANSI palette.
-   - Handles keystrokes interactively, echoes output locally or dispatches commands to the backend via `terminal_command` WebSocket events.
-   - Provides quick action controls: Buffer Clear, Session Reset, and Stream Synchronization indicators.
-
-4. **Vulnerability Report Viewer & Editor (`src/components/editor/VulnerabilityEditor.tsx`)**:
-   - Integrates `@monaco-editor/react` with SSR hydration safeguards.
-   - Dual-mode support:
-     - **Markdown Mode**: Pre-loaded with comprehensive executive vulnerability assessment templates (executive summary, CVSS scoring, PoC reproduction, remediation advice).
-     - **JSON Mode**: Pre-loaded with structured target telemetry manifests and exploit configuration payloads.
-   - Toolbar features: Format switching, clipboard export, and direct local report downloading.
+2. **Structured Vulnerability Report Viewer (`src/components/VulnerabilityReport.tsx`)**:
+   - Renders the SLM's `SLMVulnerabilityReport` JSON output:
+     - Severity Badge (`Critical`, `High`, `Medium`, `Low`, `Benign`).
+     - SLM Confidence Score meter (`0% - 100%`).
+     - CWE (`CWE-89`, `CWE-79`, `CWE-918`), CVE, and MITRE ATT&CK (`T1190`, `T1059.007`) tags.
+     - Confirmed diagnostic evidence payload & affected parameter.
+     - View switcher across **AUDIT CARD**, **RAW JSON (MONACO)**, and **PHASE 5 METRICS** live benchmark runner.
 
 ---
 
-### 2.2 Backend Service Tier (`/backend`)
+### 2.2 Backend Service & Sandbox Tier (`/backend`)
 
-The backend is developed in Python 3.12+ and serves as the operational engine, command dispatcher, and asynchronous bridge.
+1. **Decoupled Authorization Policy Gate (`app/core/policy_gate.py`)**:
+   - Backed by SQLite (`backend/sandbox_audit.db`).
+   - Verifies that `target_url` matches an active authorized scope (`DEFAULT_AUTHORIZED_TARGETS`) and immediately blocks forbidden cloud metadata (`169.254.169.254`), internal RFC1918 routers (`10.0.0.1`), or unverified external domains with HTTP `403 Target Blocked`.
+   - Persists completed `SLMVulnerabilityReport` records for compliance auditing.
 
-1. **ASGI Application Architecture (`main.py`)**:
-   - Utilizes `python-socketio.AsyncServer(async_mode='asgi')` combined with `FastAPI` using `socketio.ASGIApp`.
-   - Socket.IO intercepts `/socket.io/` requests, while passing all standard HTTP routes directly to FastAPI.
-   - Configured with Cross-Origin Resource Sharing (CORS) explicitly allowing origins `http://localhost:3000` and `http://127.0.0.1:3000`.
+2. **Docker Sandbox Manager (`app/services/docker_manager.py` & `sandbox_service.py`)**:
+   - Enforces `CONTAINER_SECURITY_BASELINE`:
+     - `mem_limit="512m"`, `cpu_quota=50000` (0.5 CPU), `network_mode="bridge"`, `cap_drop=["ALL"]`, `read_only=True`, `security_opt=["no-new-privileges:true"]`.
+   - Enforces hard execution timeouts (`60s` default) and supports immediate operator `SIGKILL` teardown (`kill_session()`).
 
-2. **Event Dispatching & Communication Protocols**:
-   - `connect`: Handles client handshake, allocates Session ID (`sid`), and transmits server readiness telemetry.
-   - `disconnect`: Safely cleans up client session tracking.
-   - `ping`: Accepts client timestamps and returns an immediate `pong` payload containing the original timestamp and server epoch for high-precision latency profiling.
-   - `terminal_command`: Handles interactive shell execution, simulated tool dispatch (`help`, `status`, `recon`, `clear`), and streams outputs back to the active terminal.
+3. **Log Sanitizer & Local SLM Parser (`app/services/log_sanitizer.py`, `slm_parser.py`, `slm_engine.py`)**:
+   - Strips ANSI escape codes (`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`), control bytes, and progress bars, windowing the buffer to fit the context boundary.
+   - Formats the sanitized log into the Constrained SLM Parser Prompt Template and extracts a zero-hallucination `SLMVulnerabilityReport`.
 
-3. **REST Endpoints**:
-   - `GET /health`: Returns service health status, operating mode, and timestamp.
-   - `GET /`: Root metadata endpoint exposing active suite capabilities and WebSocket ingress paths.
+4. **LoRA / QLoRA Fine-Tuning Pipeline (`/training`)**:
+   - `training/prepare_dataset.py`: Generates 300 ground-truth labeled SFT examples in `training/datasets/security_logs_sft.jsonl`.
+   - `training/fine_tune_lora.py` & `training/train_lora.py`: Fine-tunes `Qwen/Qwen2.5-3B-Instruct` or `meta-llama/Llama-3.2-3B-Instruct` using `peft` (`r=16, lora_alpha=32`) and `trl` (`SFTTrainer`) with 4-bit `BitsAndBytesConfig`.
+   - `training/export_model.py`: Merges LoRA adapters into base weights for standalone deployment.
 
----
-
-## 3. Communication & Data Flow Sequence
-
-The diagram below details the sequence of initialization, heartbeat latency calculation, and terminal command execution between the Next.js frontend and the FastAPI backend:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Operator as Red Team Operator
-    participant UI as Next.js Frontend (:3000)
-    participant Hook as useSocket Hook
-    participant ASGI as FastAPI / Socket.IO (:5000)
-
-    Note over UI,ASGI: Phase 1: Handshake & Connection Initialization
-    Operator->>UI: Opens Command Center
-    UI->>Hook: Mounts and calls io('http://localhost:5000')
-    Hook->>ASGI: WebSocket Upgrade Request (/socket.io/?EIO=4&transport=websocket)
-    ASGI-->>Hook: 101 Switching Protocols / Connection Accepted
-    ASGI->>Hook: emit("server_status", {connected: true, message: "..."})
-    Hook->>UI: Set isConnected = true, connectionState = 'connected'
-    UI->>Operator: Navbar reflects "🟢 Connected"
-
-    Note over UI,ASGI: Phase 2: Heartbeat Latency Tracking
-    loop Every 10 Seconds
-        Hook->>ASGI: emit("ping", {timestamp: t_client})
-        ASGI-->>Hook: emit("pong", {client_timestamp: t_client, server_timestamp: t_server})
-        Hook->>Hook: Calculate RTT = t_now - t_client
-        Hook->>UI: Update latency badge (e.g., "12ms")
-    end
-
-    Note over UI,ASGI: Phase 3: Terminal Command Execution
-    Operator->>UI: Types "status" in xterm.js & presses Enter
-    UI->>Hook: emit("terminal_command", {command: "status"})
-    Hook->>ASGI: Transmit command over WebSocket
-    ASGI->>ASGI: Process command & format ANSI output
-    ASGI-->>Hook: emit("terminal_output", {output: "\r\n[SYSTEM STATUS]..."})
-    Hook->>UI: term.write(output)
-    UI->>Operator: Terminal displays formatted status response
-```
-
----
-
-## 4. Security & Isolation Architecture
-
-Because Cyber-Cerberus is built as an offensive operations suite, strict local isolation standards are applied:
-
-1. **Local-Only Bindings**:
-   - Development servers are bound to localhost (`127.0.0.1` / `0.0.0.0` for local bridge testing) to prevent unintended external exposure.
-2. **CORS Isolation**:
-   - FastAPI and Socket.IO servers restrict origins to the Next.js frontend origin, preventing Cross-Site WebSocket Hijacking (CSWSH) from malicious external web pages.
-3. **Safe Client Hydration**:
-   - Terminal and editor components check for browser window availability before binding to avoid SSR code execution leaks.
-4. **Air-Gap Capability**:
-   - The suite is designed to function entirely offline in air-gapped lab ranges without requiring external third-party cloud API dependencies for basic terminal and report functionality.
-
----
-
-## 5. Technology Stack Summary
-
-| Layer | Technology | Version | Purpose |
-| :--- | :--- | :--- | :--- |
-| **Frontend Framework** | Next.js (App Router) | 16.3.8 | Core single-page command center application |
-| **Language (UI)** | TypeScript | 5.x | Type safety, component contracts, and interfaces |
-| **Styling & Theme** | Tailwind CSS | 4.x | Dark cyber-aesthetic, responsive grids, utilities |
-| **Terminal Emulator** | `xterm` & `xterm-addon-fit` | 5.3.0 / 0.8.0 | High-performance canvas/DOM shell emulator |
-| **Code / Report Editor** | `@monaco-editor/react` | 4.7.0 | VS Code editor for Markdown reports & JSON manifests |
-| **Icons & UI Accents** | `lucide-react` | 1.16.0 | Vector cyber iconography and status badges |
-| **Backend Framework** | FastAPI | 0.142.2 | High-performance Python async REST API |
-| **ASGI Web Server** | Uvicorn (standard) | 0.54.0 | Asynchronous server implementation |
-| **Real-time Protocol** | `python-socketio` / `socket.io-client` | 5.17.0 / 4.8.1 | Bidirectional streaming and event transport |
-| **Runtime Environment** | Python 3.12 / Node.js 22 | Latest LTS | Cross-platform local runtime environment |
+5. **REST & WebSocket Endpoints (`app/api/v1/endpoints/sandbox.py`)**:
+   - `POST /api/v1/sandbox/launch`: Policy Gate verification + ephemeral container launch.
+   - `POST /api/v1/sandbox/{session_id}/kill`: Immediate `SIGKILL` container teardown.
+   - `GET /api/v1/sandbox/reports`: Retrieve historical SLM structured JSON reports.
+   - `GET /api/v1/sandbox/policy/targets` & `POST /api/v1/sandbox/policy/authorize`: Manage Policy Gate target scopes.
+   - `POST /api/v1/sandbox/parse-log`: Direct log sanitization + SLM JSON extraction.
+   - `POST /api/v1/sandbox/benchmark`: Execute Phase 5 latency, egress policy, and 50+50 hallucination verification benchmarks.
+   - `WS /ws/sandbox/{session_id}`: Real-time bidirectional container log streamer.

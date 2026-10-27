@@ -1,6 +1,6 @@
-# Cyber-Cerberus: Operational & Technical Documentation
+# Cyber-Cerberus (RedShield): Operational & Technical Documentation
 
-Welcome to the central documentation hub for **Cyber-Cerberus**, a locally-hosted, multi-modal Red Team Operations Suite.
+Welcome to the central documentation hub for **Cyber-Cerberus**, a locally-hosted, multi-modal Red Team Operations Suite featuring the **RedShield Exploitation Sandbox & Local SLM Security Log Parser**.
 
 ---
 
@@ -8,10 +8,10 @@ Welcome to the central documentation hub for **Cyber-Cerberus**, a locally-hoste
 
 | Document | Description |
 | :--- | :--- |
-| **[Architecture & Blueprint](architecture.md)** | Deep technical specification of Next.js 16 frontend, FastAPI ASGI backend, Socket.IO streaming bridge, component boundaries, and security models. |
-| **[User Flow & Journey](user_flow.md)** | Step-by-step operator workflows, state diagrams, and interaction journeys across Recon, Exploitation Engine, Terminal, Monaco Editor, and Voice Sentinel. |
-| **[Literature & Research Survey](research_papers.md)** | Academic state-of-the-art literature review on Autonomous Penetration Testing (AutoPT), Multi-Agent LLMs (VulnBot, CheckMate, CurriculumPT), and formal assurance properties. |
-| **[Similar Platforms Comparison](similar_platforms.md)** | Detailed feature comparison and teardown across Cobalt Strike, Sliver, Mythic, Caldera, Metasploit, and PentestGPT. |
+| **[Architecture & Blueprint](architecture.md)** | Deep technical specification of Next.js 16 frontend, FastAPI ASGI backend, Decoupled Policy Gate, Hardened Docker Sandbox Controller, WebSocket Multiplexer, and Local SLM (Qwen-2.5-3B / Llama-3.2-3B) LoRA parser. |
+| **[User Flow & Journey](user_flow.md)** | Step-by-step operator workflows, state diagrams, and interaction journeys across Recon, Sandbox Execution Control Panel, SIGKILL Killswitch, `xterm.js` Terminal, Structured SLM Report Viewer, and Voice Sentinel. |
+| **[Literature & Research Survey](research_papers.md)** | Academic state-of-the-art literature review on Autonomous Penetration Testing (AutoPT), Multi-Agent LLMs, Constrained Local SLM Log Parsing (QLoRA/PEFT), and formal assurance properties. |
+| **[Similar Platforms Comparison](similar_platforms.md)** | Detailed feature comparison and teardown across Cobalt Strike, Sliver, Mythic, Caldera, Metasploit, and PentestGPT—highlighting RedShield's Decoupled Policy Gate and Zero-Hallucination Local SLM. |
 
 ---
 
@@ -28,7 +28,7 @@ Welcome to the central documentation hub for **Cyber-Cerberus**, a locally-hoste
 
 ## 🚀 Quick Start Guide
 
-### 1. Start FastAPI Backend (Port 5000)
+### 1. Start FastAPI & Sandbox Backend (Port 5000)
 ```bash
 cd backend
 source venv/bin/activate
@@ -41,5 +41,11 @@ cd frontend
 npm run dev
 ```
 
-### 3. Open Command Center
-Navigate to `http://localhost:3000` in your browser. Verify the green `🟢 Connected` badge in the top navbar.
+### 3. Build Optional Diagnostic Container Images & Run Verification Benchmarks
+```bash
+bash scripts/build_tools.sh
+./backend/venv/bin/python backend/tests/verify_phase5_metrics.py
+```
+
+### 4. Open Command Center
+Navigate to `http://localhost:3000` in your browser. Verify the green `🟢 Connected` badge in the top navbar, select an authorized target in the **Sandbox Control Panel**, and click **LAUNCH SANDBOX**.

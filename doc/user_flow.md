@@ -1,155 +1,75 @@
-# Cyber-Cerberus: Operator User Flow & Interaction Journey
+# Cyber-Cerberus (RedShield): Operator User Flow & Interaction Journey
 
 ## 1. Overview
 
-This document outlines the operational lifecycle, end-to-end user journeys, and state transitions of an operator using **Cyber-Cerberus**. The suite is structured to facilitate seamless workflows across reconnaissance, active exploitation, real-time command execution, voice dispatch, and vulnerability documentation.
+This document outlines the operational lifecycle, end-to-end user journeys, and state transitions of an operator using **Cyber-Cerberus** and the **RedShield Exploitation Sandbox & Local SLM Log Parser**.
 
 ---
 
-## 2. Global Operator Journey
+## 2. End-to-End Sandbox & SLM Execution Journey
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Standby: Launch Suite (Frontend + Backend)
-    Standby --> Connected: WebSocket Handshake Established
-    Connected --> Reconnaissance: Select "Target Recon" Tab
-    Connected --> Exploitation: Select "Exploitation Engine" Tab
-    Connected --> VoiceControl: Select "Voice Sentinel" Tab
+sequenceDiagram
+    autonumber
+    actor Operator as Security Tester
+    participant UI as Next.js Dashboard (:3000)
+    participant Gate as Decoupled Policy Gate
+    participant Sandbox as FastAPI Sandbox Controller (:5000)
+    participant Docker as Ephemeral Container (non-root)
+    participant SLM as Local SLM Parser (PEFT QLoRA)
 
-    state Reconnaissance {
-        [*] --> DefineScope: Enter Target Subnet / CIDR
-        DefineScope --> HostDiscovery: Execute Passive / Active Scan
-        HostDiscovery --> PortMapping: Service & Port Fingerprinting
-        PortMapping --> CVECorrelation: Correlate CVEs & Vulnerabilities
-        CVECorrelation --> ArmTarget: Select Target for Exploitation
-    }
-
-    state Exploitation {
-        [*] --> SplitView: Mount Live Terminal + Monaco Editor
-        SplitView --> InteractiveShell: Execute Commands via xterm.js
-        InteractiveShell --> PayloadExecution: Dispatch Exploit via C2 WebSocket
-        PayloadExecution --> StreamOutput: Real-time Output Streamed to Terminal
-        StreamOutput --> DocumentFindings: Open Monaco Vulnerability Editor
-        DocumentFindings --> ExportReport: Download Markdown / JSON Report
-    }
-
-    state VoiceControl {
-        [*] --> StandbyAudio: Acoustic Engine Idle
-        StandbyAudio --> Listening: Click "Arm Audio Sentinel"
-        Listening --> HotwordTriggered: Detect "Hey Cerberus"
-        HotwordTriggered --> CommandParsed: Interpret Natural Language Command
-        CommandParsed --> ModuleDispatched: Dispatch Command to Recon/Exploitation
-    }
-
-    Reconnaissance --> Exploitation: Arm Target & Transition
-    VoiceControl --> Exploitation: Voice Triggered Shell/Action
-    Exploitation --> [*]: Mission Complete & Report Exported
+    Operator->>UI: Selects Target URL, Module (SQLMap/XSStrike/FFUF) & clicks LAUNCH
+    UI->>Sandbox: POST /api/v1/sandbox/launch
+    Sandbox->>Gate: verify_target(target_url)
+    alt Target Unverified or Flagged
+        Gate-->>Sandbox: Denied (Egress / Scope Violation)
+        Sandbox-->>UI: HTTP 403 Target Blocked
+        UI->>Operator: Displays Red 403 Policy Gate Alert
+    else Target Authorized
+        Gate-->>Sandbox: Verified (Active Scope Token)
+        Sandbox->>Docker: Spawn Container (512MB RAM, 0.5 CPU, read_only, cap_drop=ALL)
+        Sandbox-->>UI: 200 OK {session_id, websocket_url: "/ws/sandbox/{session_id}"}
+        UI->>Sandbox: Connect WebSocket /ws/sandbox/{session_id}
+        loop Real-Time Log Multiplexing
+            Docker-->>Sandbox: stdout/stderr line
+            Sandbox-->>UI: WS Frame -> xterm.js live terminal
+            Sandbox->>Sandbox: Append to session_logs[session_id]
+        end
+        Docker-->>Sandbox: Container Exit / Timeout / SIGKILL Teardown (remove=True)
+        Sandbox->>SLM: sanitize_terminal_output() + Constrained SLM Prompt
+        SLM-->>Sandbox: Validated SLMVulnerabilityReport JSON (CVE / CWE / MITRE ATT&CK)
+        Sandbox->>Gate: Persist JSON Audit Report to SQLite
+        Sandbox-->>UI: Push sandbox_report JSON Frame
+        UI->>Operator: Renders Severity Badge, Confidence Meter, CVE/MITRE & Evidence in VulnerabilityReport.tsx
+    end
 ```
 
 ---
 
 ## 3. Step-by-Step Operator User Flows
 
-### Flow 1: Suite Initialization & Verification
+### Flow 1: Launching an Authorized Sandbox Scan
+1. Navigate to the **🎯 Exploitation Engine** tab.
+2. In the **Execution Control Panel** at the top of `TerminalViewer.tsx`:
+   - Choose a preset target (e.g., `http://juice-shop.local/rest/products/search?q=test`) or enter an authorized URL.
+   - Select the diagnostic module (`SQLMap`, `XSStrike`, or `FFUF`) and profile (`Vulnerable` or `Hardened/Benign`).
+   - Click **LAUNCH SANDBOX**.
+3. The backend verifies the URL through `policy_gate.verify_target()`, provisions the container with strict resource/capability constraints, and streams ANSI logs live into `xterm.js` over `/ws/sandbox/{session_id}`.
+4. Upon completion, the sanitized log is parsed by the Local SLM Engine and the lower pane (`VulnerabilityReport.tsx`) automatically updates with the structured finding (`Critical // SQLi`, `CWE-89`, `CVE-2023-40175`, `T1190`, `96% Confidence`).
 
-1. **System Boot**:
-   - The operator starts the FastAPI server (`python3 main.py` or `uvicorn main:app --port 5000`) and the Next.js frontend (`npm run dev`).
-2. **Accessing the Command Center**:
-   - The operator accesses `http://localhost:3000` through a modern web browser.
-3. **Telemetry & Connection Verification**:
-   - The frontend's `useSocket` hook sends a handshake request to `http://localhost:5000/socket.io/`.
-   - The operator inspects the top navbar:
-     - **Connected State**: A pulsing green badge `🟢 Connected (Xms)` confirms that the WebSocket bridge is active with real-time round-trip latency.
-     - **Disconnected State**: A red badge `🔴 Disconnected` displays if the backend is unreachable, allowing the operator to click **Ping** or **Reconnect** to re-attempt connection.
+### Flow 2: Testing the Decoupled Policy Gate (403 Target Blocked)
+1. Select the preset `Cloud Metadata 169.254.169.254 (Blocked by Policy Gate)` or type any unverified external domain (e.g., `https://unverified-external-site.org`).
+2. Click **LAUNCH SANDBOX**.
+3. The Policy Gate intercepts the request before Docker is invoked, returning `403 Target Blocked` and logging the violation reason in both the Policy Strip and `xterm.js`.
 
----
+### Flow 3: Operator Emergency Killswitch (`SIGKILL`)
+1. While a sandbox session is `RUNNING`, click the pulsing red **KILLSWITCH (SIGKILL)** button.
+2. Both a WebSocket `SIGKILL` signal and `POST /api/v1/sandbox/{session_id}/kill` are dispatched.
+3. The container is immediately killed and removed (`remove=True`), and the SLM records an `ABORTED` status with `vulnerability_detected: false`.
 
-### Flow 2: Target Reconnaissance (`🔍 Target Recon`)
-
-1. **Navigating to Recon Module**:
-   - The operator clicks the **🔍 Target Recon** tab on the left sidebar.
-2. **Reviewing Attack Surface Metrics**:
-   - The top telemetry bar displays discovered hosts (active/down), exposed ports, and detected vulnerabilities categorized by severity (Critical, High, Medium).
-3. **Inspecting the Target Matrix**:
-   - The operator browses discovered assets in the **Target Asset Matrix**:
-     - IP Address (`192.168.1.105`)
-     - Operating System & Hostname (`app-srv-01 / Ubuntu 22.04`)
-     - Open Ports & Services (`80, 443, 8080/tcp`)
-     - Correlated CVEs (`CVE-2024-XXXX RCE`)
-4. **Target Arming**:
-   - The operator reviews targets flagged with `TARGET ARMED`, selecting them for transition to active exploitation.
-
----
-
-### Flow 3: Exploitation Engine & Live Execution (`🎯 Exploitation Engine`)
-
-This is the primary operational hub featuring a vertically split dual-pane interface:
-
-```
-+------------------------------------------------------------------------+
-|                      CYBER-CERBERUS TOP NAVBAR                         |
-| [Shield] CYBER-CERBERUS   | MODULE: EXPLOITATION | 🟢 Connected (12ms) |
-+-------------------+----------------------------------------------------+
-| SIDEBAR           | TOP PANE: LIVE STREAMING TERMINAL (xterm.js)       |
-|                   | - ASCII Banner & Interactive Shell Prompt          |
-| 🔍 Target Recon   | - Keystroke echo, command execution                |
-| 🎯 Exploit Engine | - Clear buffer, session restart, live TTY stream   |
-| 🎙️ Voice Sentinel |----------------------------------------------------|
-|                   | BOTTOM PANE: VULNERABILITY REPORT VIEWER (Monaco)  |
-| [Host Telemetry]  | - Dual Mode Switcher: [MARKDOWN] | [JSON]          |
-| Backend: :5000    | - Preloaded Red Team Assessment Templates          |
-| Protocol: WSS     | - Copy to clipboard & Export report actions        |
-+-------------------+----------------------------------------------------+
-```
-
-#### Terminal Sub-Flow (Top Half):
-1. **Interactive Command Entry**:
-   - The operator clicks inside the **Live Streaming Terminal** container.
-   - The terminal presents an interactive prompt: `cerberus@c2:~$`.
-2. **Command Dispatch**:
-   - The operator types operational commands:
-     - `help`: Lists available built-in commands.
-     - `status`: Displays engine status, active target scopes, and backend telemetry.
-     - `recon`: Queries the status of reconnaissance scans.
-     - `clear`: Clears the xterm buffer.
-3. **Execution & Streaming**:
-   - Keystrokes are transmitted via WebSocket `terminal_command` events to the FastAPI backend.
-   - Output is streamed asynchronously back to the terminal buffer via `terminal_output` events without page refreshes.
-
-#### Vulnerability Viewer Sub-Flow (Bottom Half):
-1. **Report Selection**:
-   - The operator views the preloaded vulnerability assessment report generated from the engagement.
-2. **Format Switching**:
-   - **Markdown Button**: Displays executive summary, severity matrix (CVSS 3.1), proof-of-concept curl commands, and remediation steps.
-   - **JSON Button**: Displays machine-readable structured findings, target IP mappings, exploit status, and telemetry metadata.
-3. **Exporting Documentation**:
-   - **Copy**: One-click copy of the entire Markdown or JSON payload to clipboard.
-   - **Export**: Generates a downloadable `.md` or `.json` file (`cyber_cerberus_report.md`) directly in the browser.
-
----
-
-### Flow 4: Voice Sentinel Multi-Modal Control (`🎙️ Voice Sentinel`)
-
-1. **Activating the Sentinel**:
-   - The operator navigates to the **🎙️ Voice Sentinel** tab.
-   - Clicks **Arm Audio Sentinel** to engage the acoustic listening engine.
-2. **Visual Feedback**:
-   - Dynamic animated audio waveform bars pulse with green/red neon glow, indicating real-time voice activity detection (VAD).
-3. **Issuing Voice Commands**:
-   - The operator speaks operational directives using the wake word:
-     - *"Hey Cerberus, scan target subnet"* -> Dispatches automated scan to Recon module.
-     - *"Hey Cerberus, status report"* -> Generates acoustic status summary.
-     - *"Hey Cerberus, open terminal buffer"* -> Focuses active exploitation terminal.
-4. **Audit Trail**:
-   - The **Voice Event & Dispatch Log** records every audio utterance, timestamp, and resulting execution state.
-
----
-
-## 4. Error Handling & Edge Cases
-
-| Condition | Operator Experience | System Remediation |
-| :--- | :--- | :--- |
-| **Backend Offline / Crashed** | Navbar badge switches to `🔴 Disconnected`, terminal echoes `[local-echo] ... (backend offline)`. | Frontend attempts automatic reconnection every 2s for up to 10 attempts. |
-| **High Network Latency** | Latency indicator updates (e.g., `(240ms)` in amber). | Heartbeat maintains keep-alive; terminal uses local echo buffering. |
-| **Terminal Resize / Window Resize** | Terminal container dimensions shift. | `xterm-addon-fit` recalculates columns and rows via window resize listeners. |
-| **Report Formatting Inconsistencies** | Syntax errors highlighted in Monaco. | Monaco built-in linter displays syntax diagnostics in real time. |
+### Flow 4: Running Phase 5 Validation Benchmarks
+1. In the **SLM Structured Vulnerability Report** pane (`VulnerabilityReport.tsx`), click the **PHASE 5 METRICS** tab.
+2. The UI invokes `POST /api/v1/sandbox/benchmark`, which executes:
+   - **Task 5.1**: Spin-up latency (`<1.5s`), WebSocket first-byte latency (`<500ms`), and SLM inference time (`<4s`).
+   - **Task 5.2**: Container hardening (`read_only`, `cap_drop=ALL`, `no-new-privileges`) and egress block verification.
+   - **Task 5.3**: 50 vulnerable scans + 50 secure/benign scans confirming 100% accuracy and 0% hallucinated CVEs.
