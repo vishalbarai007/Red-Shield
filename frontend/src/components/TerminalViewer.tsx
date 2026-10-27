@@ -44,6 +44,7 @@ interface TerminalViewerProps {
   isConnected: boolean;
   onReportReceived?: (report: SandboxReportPayload) => void;
   apiBaseUrl?: string;
+  isActive?: boolean;
 }
 
 const PRESET_TARGETS = [
@@ -84,12 +85,18 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
   isConnected,
   onReportReceived,
   apiBaseUrl = 'http://localhost:5000',
+  isActive = true,
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermInstance = useRef<XTermType | null>(null);
   const fitAddonInstance = useRef<FitAddonType | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const currentLineRef = useRef<string>('');
+  const socketRef = useRef<Socket | null>(socket);
+
+  useEffect(() => {
+    socketRef.current = socket;
+  }, [socket]);
 
   const [targetUrl, setTargetUrl] = useState<string>(
     'http://juice-shop.local/rest/products/search?q=test'
@@ -107,14 +114,34 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
   });
 
   useEffect(() => {
-    let term: XTermType;
-    let fitAddon: FitAddonType;
+    let isDisposed = false;
+    let term: XTermType | null = null;
+    let fitAddon: FitAddonType | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const safeFit = () => {
+      if (
+        !isDisposed &&
+        fitAddonInstance.current &&
+        terminalRef.current &&
+        terminalRef.current.clientWidth > 0 &&
+        terminalRef.current.clientHeight > 0
+      ) {
+        try {
+          fitAddonInstance.current.fit();
+        } catch {
+          // Ignore transient fit errors when hidden or resizing
+        }
+      }
+    };
 
     const initTerminal = async () => {
-      if (!terminalRef.current) return;
+      if (!terminalRef.current || isDisposed) return;
 
       const { Terminal } = await import('xterm');
       const { FitAddon } = await import('xterm-addon-fit');
+
+      if (!terminalRef.current || isDisposed) return;
 
       term = new Terminal({
         cursorBlink: true,
@@ -151,10 +178,17 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
       fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(terminalRef.current);
-      fitAddon.fit();
 
       xtermInstance.current = term;
       fitAddonInstance.current = fitAddon;
+      safeFit();
+
+      if (typeof ResizeObserver !== 'undefined' && terminalRef.current) {
+        resizeObserver = new ResizeObserver(() => {
+          safeFit();
+        });
+        resizeObserver.observe(terminalRef.current);
+      }
 
       term.writeln('\x1b[36m[+] REDSHIELD // CYBER-CERBERUS SANDBOX CONTROLLER v1.2.0\x1b[0m');
       term.writeln(
@@ -166,6 +200,7 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
       term.write('\x1b[31mcerberus@sandbox\x1b[0m:\x1b[34m~\x1b[0m$ ');
 
       term.onData((data) => {
+        if (!term) return;
         const code = data.charCodeAt(0);
         if (code === 13) {
           term.write('\r\n');
@@ -179,8 +214,9 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
           }
 
           if (command.length > 0) {
-            if (socket && socket.connected) {
-              socket.emit('terminal_command', { command });
+            const activeSocket = socketRef.current;
+            if (activeSocket && activeSocket.connected) {
+              activeSocket.emit('terminal_command', { command });
             } else {
               term.writeln(`\x1b[33m[local-echo] ${command}\x1b[0m`);
               term.write('\x1b[31mcerberus@sandbox\x1b[0m:\x1b[34m~\x1b[0m$ ');
@@ -202,23 +238,41 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
 
     initTerminal();
 
-    const handleResize = () => {
-      if (fitAddonInstance.current) {
-        fitAddonInstance.current.fit();
-      }
-    };
-    window.addEventListener('resize', handleResize);
-
     return () => {
-      window.removeEventListener('resize', handleResize);
+      isDisposed = true;
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       if (wsRef.current) {
         wsRef.current.close();
       }
       if (xtermInstance.current) {
         xtermInstance.current.dispose();
+        xtermInstance.current = null;
       }
+      fitAddonInstance.current = null;
     };
   }, []);
+
+  // Refit terminal when module becomes visible again
+  useEffect(() => {
+    if (
+      isActive &&
+      fitAddonInstance.current &&
+      terminalRef.current &&
+      terminalRef.current.clientWidth > 0 &&
+      terminalRef.current.clientHeight > 0
+    ) {
+      const frame = window.requestAnimationFrame(() => {
+        try {
+          fitAddonInstance.current?.fit();
+        } catch {
+          // Ignore transient fit errors
+        }
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+  }, [isActive]);
 
   // Listen for interactive Socket.IO terminal output & sandbox reports
   useEffect(() => {
@@ -389,7 +443,7 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
                 setScanProfile(preset.profile);
               }
             }}
-            className="px-2 py-1 rounded text-xs font-mono bg-[#0a0d14] text-cyan-300 border border-cyan-500/30 focus:outline-none"
+            className="px-2 py-1 rounded text-xs font-mono bg-[#0a0d14] text-cyan-300 border border-cyan-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan"
           >
             {PRESET_TARGETS.map((p, idx) => (
               <option key={p.label} value={idx}>
@@ -401,10 +455,11 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
           {/* Target URL Input */}
           <input
             type="text"
+            aria-label="Target URL"
             value={targetUrl}
             onChange={(e) => setTargetUrl(e.target.value)}
             placeholder="Enter Target URL (verified by Policy Gate)..."
-            className="flex-1 min-w-[220px] px-2.5 py-1 rounded text-xs font-mono bg-[#0a0d14] text-gray-100 border border-border-glow/30 focus:border-cyan-400 focus:outline-none"
+            className="flex-1 min-w-[220px] px-2.5 py-1 rounded text-xs font-mono bg-[#0a0d14] text-gray-100 border border-border-glow/30 focus-visible:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan"
           />
 
           {/* Module Selector Dropdown (SQLMap / XSStrike / FFUF) */}
@@ -414,7 +469,7 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
             onChange={(e) =>
               setSelectedModule(e.target.value as 'sqlmap' | 'xsstrike' | 'ffuf')
             }
-            className="px-2.5 py-1 rounded text-xs font-mono bg-[#0a0d14] text-gray-200 border border-border-glow/30 focus:outline-none"
+            className="px-2.5 py-1 rounded text-xs font-mono bg-[#0a0d14] text-gray-200 border border-border-glow/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan"
           >
             <option value="sqlmap">Module: SQLMap (SQLi Audit)</option>
             <option value="xsstrike">Module: XSStrike (XSS Audit)</option>
@@ -426,7 +481,7 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
             aria-label="Scan Profile"
             value={scanProfile}
             onChange={(e) => setScanProfile(e.target.value as 'vulnerable' | 'benign')}
-            className="px-2 py-1 rounded text-xs font-mono bg-[#0a0d14] text-gray-300 border border-border-glow/30 focus:outline-none"
+            className="px-2 py-1 rounded text-xs font-mono bg-[#0a0d14] text-gray-300 border border-border-glow/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan"
           >
             <option value="vulnerable">Profile: Vulnerable Target</option>
             <option value="benign">Profile: Hardened/Benign Target</option>
@@ -434,41 +489,44 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
 
           {/* Launch Scan Button */}
           <button
+            type="button"
             onClick={handleLaunchScan}
             disabled={isRunning}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono font-semibold transition-all select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan ${
               isRunning
                 ? 'bg-emerald-900/40 text-emerald-300/60 cursor-not-allowed border border-emerald-500/20'
                 : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shadow-sm'
             }`}
           >
-            <Play className="w-3.5 h-3.5" />
+            <Play className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{isRunning ? 'RUNNING SANDBOX...' : 'LAUNCH SANDBOX'}</span>
           </button>
 
           {/* Abort / Killswitch Button (SIGKILL) */}
           <button
+            type="button"
             onClick={handleKillSwitch}
             disabled={!isRunning && !activeSessionId}
+            aria-label="Send SIGKILL to immediately tear down the active container"
             title="Send SIGKILL to immediately tear down the active container"
-            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-mono font-semibold transition-all select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan ${
               isRunning
                 ? 'bg-red-500/25 hover:bg-red-500/40 text-red-300 border border-red-500/50 animate-pulse'
                 : 'bg-red-950/30 text-red-400/50 border border-red-500/20 hover:text-red-300'
             }`}
           >
-            <OctagonX className="w-3.5 h-3.5" />
+            <OctagonX className="w-3.5 h-3.5" aria-hidden="true" />
             <span>KILLSWITCH (SIGKILL)</span>
           </button>
         </div>
 
         {/* Policy Gate & Container Hardening Status Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
-          <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+          <div className="flex items-center gap-1.5" role="status" aria-live="polite">
             {policyStatus.state === 'blocked' ? (
-              <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
+              <ShieldAlert className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden="true" />
             ) : (
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
             )}
             <span
               className={
@@ -476,20 +534,20 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
                   ? 'text-red-400 font-semibold'
                   : policyStatus.state === 'authorized'
                   ? 'text-emerald-300'
-                  : 'text-gray-400'
+                  : 'text-gray-300'
               }
             >
               {policyStatus.message}
             </span>
           </div>
 
-          <div className="flex items-center gap-3 text-gray-400">
+          <div className="flex items-center gap-3 text-gray-300">
             <span className="flex items-center gap-1">
-              <Cpu className="w-3 h-3 text-cyan-400" />
+              <Cpu className="w-3 h-3 text-cyan-400" aria-hidden="true" />
               0.5 CPU / 512MB RAM
             </span>
             <span className="flex items-center gap-1">
-              <Lock className="w-3 h-3 text-cyan-400" />
+              <Lock className="w-3 h-3 text-cyan-400" aria-hidden="true" />
               read_only=True | cap_drop=ALL
             </span>
           </div>
@@ -499,39 +557,44 @@ export const TerminalViewer: React.FC<TerminalViewerProps> = ({
       {/* Terminal Title Bar */}
       <div className="h-8 px-3 bg-[#0f141f] border-b border-border-glow/20 flex items-center justify-between select-none">
         <div className="flex items-center gap-2">
-          <TerminalIcon className="w-3.5 h-3.5 text-cyber-red" />
+          <TerminalIcon className="w-3.5 h-3.5 text-cyber-red shrink-0" aria-hidden="true" />
           <span className="font-mono text-xs font-semibold text-gray-200">
             SANDBOX STREAMING TERMINAL (xterm.js)
           </span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/60 font-mono text-cyber-cyan border border-cyber-cyan/30">
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-black/60 font-mono text-cyber-cyan border border-cyber-cyan/30 select-text">
             {activeSessionId ? `/ws/sandbox/${activeSessionId}` : 'WS: STANDBY'}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 mr-2 text-[11px] font-mono text-cyber-muted">
+          <div className="flex items-center gap-1.5 mr-2 text-xs font-mono text-cyber-muted">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
                 isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
               }`}
+              aria-hidden="true"
             />
             <span>{isConnected ? 'STREAM SYNCED' : 'STREAM OFFLINE'}</span>
           </div>
 
           <button
+            type="button"
             onClick={handleClear}
+            aria-label="Clear terminal buffer"
             title="Clear Terminal Buffer"
-            className="p-1 rounded text-cyber-muted hover:text-gray-200 hover:bg-cyber-bg-surface transition-colors"
+            className="p-1.5 rounded text-cyber-muted hover:text-gray-100 hover:bg-cyber-bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
 
           <button
+            type="button"
             onClick={handleReset}
+            aria-label="Reset terminal session"
             title="Reset Session"
-            className="p-1 rounded text-cyber-muted hover:text-gray-200 hover:bg-cyber-bg-surface transition-colors"
+            className="p-1.5 rounded text-cyber-muted hover:text-gray-100 hover:bg-cyber-bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
       </div>

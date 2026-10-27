@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Terminal as TerminalIcon, Trash2, RotateCcw, Maximize2, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { Terminal as TerminalIcon, Trash2, RotateCcw } from 'lucide-react';
 import type { Terminal as XTermType } from 'xterm';
 import type { FitAddon as FitAddonType } from 'xterm-addon-fit';
 import { Socket } from 'socket.io-client';
@@ -9,25 +9,54 @@ import { Socket } from 'socket.io-client';
 interface XTerminalProps {
   socket: Socket | null;
   isConnected: boolean;
+  isActive?: boolean;
 }
 
-export const XTerminal: React.FC<XTerminalProps> = ({ socket, isConnected }) => {
+export const XTerminal: React.FC<XTerminalProps> = ({
+  socket,
+  isConnected,
+  isActive = true,
+}) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermInstance = useRef<XTermType | null>(null);
   const fitAddonInstance = useRef<FitAddonType | null>(null);
   const currentLineRef = useRef<string>('');
-  const [isReady, setIsReady] = useState(false);
+  const socketRef = useRef<Socket | null>(socket);
 
   useEffect(() => {
-    let term: XTermType;
-    let fitAddon: FitAddonType;
+    socketRef.current = socket;
+  }, [socket]);
+
+  useEffect(() => {
+    let isDisposed = false;
+    let term: XTermType | null = null;
+    let fitAddon: FitAddonType | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const safeFit = () => {
+      if (
+        !isDisposed &&
+        fitAddonInstance.current &&
+        terminalRef.current &&
+        terminalRef.current.clientWidth > 0 &&
+        terminalRef.current.clientHeight > 0
+      ) {
+        try {
+          fitAddonInstance.current.fit();
+        } catch {
+          // Ignore transient fit errors when container is transitioning
+        }
+      }
+    };
 
     const initTerminal = async () => {
-      if (!terminalRef.current) return;
+      if (!terminalRef.current || isDisposed) return;
 
       // Dynamic import to prevent SSR issues
       const { Terminal } = await import('xterm');
       const { FitAddon } = await import('xterm-addon-fit');
+
+      if (!terminalRef.current || isDisposed) return;
 
       term = new Terminal({
         cursorBlink: true,
@@ -65,10 +94,18 @@ export const XTerminal: React.FC<XTerminalProps> = ({ socket, isConnected }) => 
       term.loadAddon(fitAddon);
 
       term.open(terminalRef.current);
-      fitAddon.fit();
 
       xtermInstance.current = term;
       fitAddonInstance.current = fitAddon;
+      safeFit();
+
+      // Observe container size changes (sidebar collapse/expand or tab visibility restore)
+      if (typeof ResizeObserver !== 'undefined' && terminalRef.current) {
+        resizeObserver = new ResizeObserver(() => {
+          safeFit();
+        });
+        resizeObserver.observe(terminalRef.current);
+      }
 
       // Welcome ASCII Banner
       term.writeln('\x1b[38;2;239;68;68m');
@@ -86,6 +123,7 @@ export const XTerminal: React.FC<XTerminalProps> = ({ socket, isConnected }) => 
 
       // Interactive Keystrokes
       term.onData((data) => {
+        if (!term) return;
         const code = data.charCodeAt(0);
 
         if (code === 13) {
@@ -101,8 +139,9 @@ export const XTerminal: React.FC<XTerminalProps> = ({ socket, isConnected }) => 
           }
 
           if (command.length > 0) {
-            if (socket && socket.connected) {
-              socket.emit('terminal_command', { command });
+            const activeSocket = socketRef.current;
+            if (activeSocket && activeSocket.connected) {
+              activeSocket.emit('terminal_command', { command });
             } else {
               term.writeln(`\x1b[33m[local-echo] ${command} (backend offline)\x1b[0m`);
               term.write('\x1b[31mcerberus@c2\x1b[0m:\x1b[34m~\x1b[0m$ ');
@@ -122,28 +161,42 @@ export const XTerminal: React.FC<XTerminalProps> = ({ socket, isConnected }) => 
           term.write(data);
         }
       });
-
-      setIsReady(true);
     };
 
     initTerminal();
 
-    // Auto-resize on window resize
-    const handleResize = () => {
-      if (fitAddonInstance.current) {
-        fitAddonInstance.current.fit();
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-
     return () => {
-      window.removeEventListener('resize', handleResize);
+      isDisposed = true;
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       if (xtermInstance.current) {
         xtermInstance.current.dispose();
+        xtermInstance.current = null;
       }
+      fitAddonInstance.current = null;
     };
   }, []);
+
+  // Refit terminal when module becomes visible again
+  useEffect(() => {
+    if (
+      isActive &&
+      fitAddonInstance.current &&
+      terminalRef.current &&
+      terminalRef.current.clientWidth > 0 &&
+      terminalRef.current.clientHeight > 0
+    ) {
+      const frame = window.requestAnimationFrame(() => {
+        try {
+          fitAddonInstance.current?.fit();
+        } catch {
+          // Ignore transient fit errors
+        }
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+  }, [isActive]);
 
   // Listen for terminal output from WebSocket
   useEffect(() => {
@@ -174,6 +227,7 @@ export const XTerminal: React.FC<XTerminalProps> = ({ socket, isConnected }) => 
   const handleReset = () => {
     if (xtermInstance.current) {
       xtermInstance.current.reset();
+      currentLineRef.current = '';
       xtermInstance.current.writeln('\x1b[32m[+] Session reset.\x1b[0m');
       xtermInstance.current.write('\x1b[31mcerberus@c2\x1b[0m:\x1b[34m~\x1b[0m$ ');
     }
@@ -184,39 +238,44 @@ export const XTerminal: React.FC<XTerminalProps> = ({ socket, isConnected }) => 
       {/* Terminal Title Bar */}
       <div className="h-9 px-3 bg-[#0f141f] border-b border-border-glow/20 flex items-center justify-between select-none">
         <div className="flex items-center gap-2">
-          <TerminalIcon className="w-3.5 h-3.5 text-cyber-red" />
+          <TerminalIcon className="w-3.5 h-3.5 text-cyber-red shrink-0" aria-hidden="true" />
           <span className="font-mono text-xs font-semibold text-gray-200">
             LIVE STREAMING TERMINAL
           </span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/60 font-mono text-cyber-cyan border border-cyber-cyan/30">
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-black/60 font-mono text-cyber-cyan border border-cyber-cyan/30 select-text">
             TTY: /dev/pts/0
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 mr-2 text-[11px] font-mono text-cyber-muted">
+          <div className="flex items-center gap-1.5 mr-2 text-xs font-mono text-cyber-muted">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
                 isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
               }`}
+              aria-hidden="true"
             />
             <span>{isConnected ? 'STREAM SYNCED' : 'STREAM OFFLINE'}</span>
           </div>
 
           <button
+            type="button"
             onClick={handleClear}
+            aria-label="Clear terminal buffer"
             title="Clear Terminal Buffer"
-            className="p-1 rounded text-cyber-muted hover:text-gray-200 hover:bg-cyber-bg-surface transition-colors"
+            className="p-1.5 rounded text-cyber-muted hover:text-gray-100 hover:bg-cyber-bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
 
           <button
+            type="button"
             onClick={handleReset}
+            aria-label="Reset terminal session"
             title="Reset Session"
-            className="p-1 rounded text-cyber-muted hover:text-gray-200 hover:bg-cyber-bg-surface transition-colors"
+            className="p-1.5 rounded text-cyber-muted hover:text-gray-100 hover:bg-cyber-bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyber-cyan"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -228,3 +287,4 @@ export const XTerminal: React.FC<XTerminalProps> = ({ socket, isConnected }) => 
     </div>
   );
 };
+

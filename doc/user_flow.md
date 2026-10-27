@@ -67,9 +67,15 @@ sequenceDiagram
 2. Both a WebSocket `SIGKILL` signal and `POST /api/v1/sandbox/{session_id}/kill` are dispatched.
 3. The container is immediately killed and removed (`remove=True`), and the SLM records an `ABORTED` status with `vulnerability_detected: false`.
 
-### Flow 4: Running Phase 5 Validation Benchmarks
-1. In the **SLM Structured Vulnerability Report** pane (`VulnerabilityReport.tsx`), click the **PHASE 5 METRICS** tab.
-2. The UI invokes `POST /api/v1/sandbox/benchmark`, which executes:
+### Flow 4: Running Phase 5 Validation Benchmarks & Authoring Reports
+1. In the **SLM Structured Vulnerability Report** pane (`VulnerabilityReport.tsx`), switch between **AUDIT CARD**, **MARKDOWN**, and **JSON** modes.
+   - Edits made in **MARKDOWN** and **JSON** are preserved independently across format switches and module tab changes.
+   - If a draft has been modified, a `MODIFIED` badge and a **Reset** action appear; resetting to the default template requires explicit operator confirmation (`Confirm` / `Cancel`).
+2. Click the **PHASE 5 METRICS** tab to invoke `POST /api/v1/sandbox/benchmark`, which executes:
    - **Task 5.1**: Spin-up latency (`<1.5s`), WebSocket first-byte latency (`<500ms`), and SLM inference time (`<4s`).
    - **Task 5.2**: Container hardening (`read_only`, `cap_drop=ALL`, `no-new-privileges`) and egress block verification.
    - **Task 5.3**: 50 vulnerable scans + 50 secure/benign scans confirming 100% accuracy and 0% hallucinated CVEs.
+
+### Flow 5: Navigation, Text Selection, & Target Identifier Copying
+1. Operators can collapse or expand the desktop sidebar (`w-64` to `w-16`) or use the mobile navigation drawer on smaller viewports; the terminal automatically refits via `ResizeObserver`.
+2. Operational text (IP addresses, CVE IDs, ports, terminal logs, and voice dispatch logs) is selectable throughout the interface, with dedicated copy buttons and visual/screen-reader feedback on target IPs, URLs, and CVE identifiers.

@@ -67,8 +67,12 @@ graph TD
 
 ### 2.1 Frontend Presentation Tier (`/frontend`)
 
-1. **Sandbox Terminal & Execution Control Panel (`src/components/TerminalViewer.tsx`)**:
-   - Mounts `xterm.js` and `xterm-addon-fit` dynamically (`'use client'`).
+1. **Command Center Layout & Navigation (`src/app/page.tsx`, `src/components/layout/Navbar.tsx`, `src/components/layout/Sidebar.tsx`)**:
+   - Keeps all three operational modules (`exploit`, `recon`, `voice`) mounted using visibility toggling so terminal sessions and report drafts persist across module switches without creating duplicate WebSocket connections.
+   - Features a collapsible desktop sidebar (`w-64` to `w-16` icon rail) and a responsive mobile navigation drawer (`role="dialog"`), with live Host Telemetry (`ONLINE` / `CONNECTING` / `OFFLINE`) bound directly to the `useSocket` connection state.
+
+2. **Sandbox Terminal & Execution Control Panel (`src/components/TerminalViewer.tsx` & `src/components/terminal/XTerminal.tsx`)**:
+   - Mounts `xterm.js` and `xterm-addon-fit` dynamically (`'use client'`), using a `ResizeObserver` and visibility refit hook so terminal dimensions automatically adjust when the sidebar collapses/expands or when returning from another tab.
    - Provides the **Execution Control Panel**:
      - Target Scope Preset Picker & URL input (`http://juice-shop.local`, `http://dvwa.local`, or unauthorized metadata test case).
      - Diagnostic Module Selector (`sqlmap` SQLi Audit, `xsstrike` XSS Audit, `ffuf` SSRF/Surface Audit).
@@ -76,13 +80,13 @@ graph TD
      - **LAUNCH SANDBOX** (`POST /api/v1/sandbox/launch`) and **KILLSWITCH (SIGKILL)** (`POST /api/v1/sandbox/{session_id}/kill`).
    - Connects directly to `/ws/sandbox/{session_id}` to stream real-time container logs into `xterm.js`.
 
-2. **Structured Vulnerability Report Viewer (`src/components/VulnerabilityReport.tsx`)**:
-   - Renders the SLM's `SLMVulnerabilityReport` JSON output:
+3. **Structured Vulnerability Report Viewer & Editor (`src/components/VulnerabilityReport.tsx` & `src/components/editor/VulnerabilityEditor.tsx`)**:
+   - Renders the SLM's `SLMVulnerabilityReport` output:
      - Severity Badge (`Critical`, `High`, `Medium`, `Low`, `Benign`).
      - SLM Confidence Score meter (`0% - 100%`).
-     - CWE (`CWE-89`, `CWE-79`, `CWE-918`), CVE, and MITRE ATT&CK (`T1190`, `T1059.007`) tags.
+     - CWE (`CWE-89`, `CWE-79`, `CWE-918`), CVE, and MITRE ATT&CK (`T1190`, `T1059.007`) tags with one-click accessible copy buttons.
      - Confirmed diagnostic evidence payload & affected parameter.
-     - View switcher across **AUDIT CARD**, **RAW JSON (MONACO)**, and **PHASE 5 METRICS** live benchmark runner.
+     - View switcher across **AUDIT CARD**, **MARKDOWN**, **JSON (MONACO)**, and **PHASE 5 METRICS** live benchmark runner, preserving Markdown and JSON edits independently with explicit confirmation before resetting modified templates.
 
 ---
 
