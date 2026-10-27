@@ -1,5 +1,5 @@
 """
-Central Configuration for the RedShield / Cyber-Cerberus Exploitation Sandbox
+Central Configuration for the Red-Shield Exploitation Sandbox
 and Local SLM Log Parsing Engine.
 """
 

@@ -16,8 +16,8 @@ sio = socketio.AsyncServer(
 
 # Initialize FastAPI application
 fastapi_app = FastAPI(
-    title="Cyber-Cerberus / RedShield API",
-    description="Locally-hosted, Multi-Modal Red Team Operations Suite & Exploitation Sandbox C2 Backend",
+    title="Red-Shield API",
+    description="Red-Shield: Locally-hosted, Multi-Modal AI Red Team Operations Suite & Exploitation Sandbox Backend",
     version="1.2.0"
 )
 
@@ -47,7 +47,7 @@ sandbox_service.register_socketio_emitter(_sio_broadcast)
 async def health_check():
     return {
         "status": "online",
-        "system": "Cyber-Cerberus Operations Suite (RedShield Sandbox Active)",
+        "system": "Red-Shield Operations Suite (Sandbox Active)",
         "mode": "Operational",
         "timestamp": time.time()
     }
@@ -56,7 +56,7 @@ async def health_check():
 @fastapi_app.get("/")
 async def root():
     return {
-        "message": "Cyber-Cerberus Red Team C2 & RedShield Sandbox Engine is operational.",
+        "message": "Red-Shield AI Red Team C2 & Sandbox Engine is operational.",
         "websocket_endpoint": "/socket.io/",
         "sandbox_ws_endpoint": "/ws/sandbox/{session_id}",
         "sandbox_rest_prefix": "/api/v1/sandbox",
@@ -70,7 +70,7 @@ async def connect(sid, environ):
     print(f"[+] Client connected: SID={sid}")
     await sio.emit("server_status", {
         "connected": True,
-        "message": "Cyber-Cerberus Command & Control Bridge Established.",
+        "message": "Red-Shield Command & Control Bridge Established.",
         "timestamp": time.time()
     }, to=sid)
 
@@ -91,7 +91,7 @@ async def handle_ping(sid, data=None):
         "status": "pong",
         "client_timestamp": client_timestamp,
         "server_timestamp": server_time,
-        "message": "PONG: Cyber-Cerberus C2 Active"
+        "message": "PONG: Red-Shield C2 Active"
     }
     await sio.emit("pong", response, to=sid)
 
@@ -113,10 +113,10 @@ async def handle_sandbox_kill(sid, data=None):
 async def handle_terminal_command(sid, data=None):
     """Echo/respond to shell commands over WebSocket"""
     cmd = data.get("command", "").strip() if isinstance(data, dict) else str(data).strip()
-    response_output = f"[cerberus-c2] Executed: {cmd}\r\n"
+    response_output = f"[red-shield-c2] Executed: {cmd}\r\n"
     if cmd == "help":
         response_output = (
-            "\r\n=== Cyber-Cerberus C2 & RedShield Sandbox Subsystem ===\r\n"
+            "\r\n=== Red-Shield C2 & Sandbox Subsystem ===\r\n"
             "Available commands:\r\n"
             "  help      - Show this help message\r\n"
             "  status    - Show suite telemetry, Policy Gate & SLM status\r\n"
@@ -126,7 +126,7 @@ async def handle_terminal_command(sid, data=None):
         )
     elif cmd == "status":
         response_output = (
-            "\r\n[SYSTEM STATUS] Cyber-Cerberus v1.2.0 (RedShield Sandbox + SLM)\r\n"
+            "\r\n[SYSTEM STATUS] Red-Shield v1.2.0 (Sandbox + SLM)\r\n"
             "  Engine: Ready (Docker Hardened Baseline: 512MB RAM, 0.5 CPU, read_only, cap_drop=ALL)\r\n"
             "  Bridge: Socket.IO / ASGI + Native WS (/ws/sandbox/{session_id}) on :5000\r\n"
             "  SLM Parser: Constrained Zero-Hallucination Evidence Engine Ready\r\n"

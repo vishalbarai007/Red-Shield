@@ -26,7 +26,7 @@ from fastapi import HTTPException
 
 async def main() -> None:
     print("=================================================================")
-    print("  RedShield / Cyber-Cerberus Phase 5 Verification & Benchmarks")
+    print("         Red-Shield Phase 5 Verification & Benchmarks")
     print("=================================================================")
 
     # 1. Run full Phase 5 benchmark suite (5.1, 5.2, 5.3)

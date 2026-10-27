@@ -1,4 +1,4 @@
-# Cyber-Cerberus: AI Agent Operational Guidelines
+# Red-Shield: AI Agent Operational Guidelines
 
 ## Core Project Mandates
 

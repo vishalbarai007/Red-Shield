@@ -1,7 +1,7 @@
-# RedShield Diagnostic Container: SQLi Telemetry Simulator (Academic Safe Sandbox)
+# Red-Shield Diagnostic Container: SQLi Telemetry Simulator (Academic Safe Sandbox)
 FROM python:3.12-slim
 
-LABEL maintainer="RedShield / Cyber-Cerberus Academic Project"
+LABEL maintainer="Red-Shield Academic Project"
 LABEL description="Isolated non-root diagnostic container emitting structured SQLi audit logs for SLM parsing"
 
 # Create non-root sandbox user and group
@@ -19,7 +19,7 @@ target = os.environ.get("TARGET_URL", "http://juice-shop.local/rest/products/sea
 mode = os.environ.get("SCAN_PROFILE", "vulnerable")
 
 lines = [
-    "\x1b[36m[*] Starting RedShield Diagnostic SQLi Telemetry Auditor v1.0 (Safe Academic Mode)\x1b[0m",
+    "\x1b[36m[*] Starting Red-Shield Diagnostic SQLi Telemetry Auditor v1.0 (Safe Academic Mode)\x1b[0m",
     f"\x1b[90m[*] Target Endpoint: {target}\x1b[0m",
     "\x1b[32m[+] Policy Gate Verification: PASSED (Authorized Lab Scope)\x1b[0m",
     "\x1b[33m[*] Inspecting query parameter schema and error handling behavior...\x1b[0m",

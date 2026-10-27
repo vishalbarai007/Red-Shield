@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# RedShield / Cyber-Cerberus: Diagnostic Tool Image Builder & Smoke Test
+# Red-Shield: Diagnostic Tool Image Builder & Smoke Test
 # =============================================================================
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "================================================================="
-echo "  RedShield Sandbox Container Builder (Academic Safe Mode)"
+echo "  Red-Shield Sandbox Container Builder (Academic Safe Mode)"
 echo "================================================================="
 
 if ! command -v docker >/dev/null 2>&1; then

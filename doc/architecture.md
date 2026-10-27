@@ -1,8 +1,8 @@
-# Cyber-Cerberus (RedShield): Systems Architecture & Technical Blueprint
+# Red-Shield: Systems Architecture & Technical Blueprint
 
 ## 1. System Overview
 
-**Cyber-Cerberus** (incorporating the **RedShield Exploitation Sandbox & Security Log Parsing (SLM)** engine) is a locally-hosted, multi-modal Red Team Operations Suite and controlled security verification platform. It bridges the gap between running isolated diagnostic tools and obtaining auditable, structured vulnerability intelligence—without giving autonomous decision-making power to an AI.
+**Red-Shield** (incorporating the **Exploitation Sandbox & Security Log Parsing (SLM)** engine) is a locally-hosted, multi-modal AI Red Team Operations Suite and controlled security verification platform. It bridges the gap between running isolated diagnostic tools and obtaining auditable, structured vulnerability intelligence—without giving autonomous decision-making power to an AI.
 
 The platform employs a decoupled **Client-Server & Ephemeral Sandbox Architecture** utilizing:
 - **Frontend Presentation Layer**: Next.js 16 (React 19, TypeScript, Tailwind CSS, App Router) running on `http://localhost:3000`.

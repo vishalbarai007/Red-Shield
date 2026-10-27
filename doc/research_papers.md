@@ -1,16 +1,16 @@
-# Cyber-Cerberus (RedShield): Literature Review & Academic Research Survey
+# Red-Shield: Literature Review & Academic Research Survey
 
 ## 1. Introduction
 
-The development of **Cyber-Cerberus** and its **RedShield Exploitation Sandbox & Local SLM Log Parser** sits at the intersection of **Controlled Security Verification**, **Small Language Model (SLM) Structured Extraction**, and **Formal Assurance in Offensive Cyber Operations**.
+The development of **Red-Shield** and its **Exploitation Sandbox & Local SLM Log Parser** sits at the intersection of **Controlled Security Verification**, **Small Language Model (SLM) Structured Extraction**, and **Formal Assurance in Offensive Cyber Operations**.
 
-Rather than granting unconstrained autonomous decision-making power to cloud LLMs—which introduces severe risks of scope violations, data leakage, and hallucinated CVEs—RedShield enforces a **Human-in-the-Loop Policy Gate** paired with a **Fine-Tuned Local SLM (Qwen-2.5-3B / Llama-3.2-3B via QLoRA)** solely for deterministic post-execution log parsing.
+Rather than granting unconstrained autonomous decision-making power to cloud LLMs—which introduces severe risks of scope violations, data leakage, and hallucinated CVEs—Red-Shield enforces a **Human-in-the-Loop Policy Gate** paired with a **Fine-Tuned Local SLM (Qwen-2.5-3B / Llama-3.2-3B via QLoRA)** solely for deterministic post-execution log parsing.
 
 ---
 
 ## 2. Foundational Research Matrix
 
-| Paper Title | Authors / Year | Reference / ArXiv | Core Contribution to RedShield & Cyber-Cerberus |
+| Paper Title | Authors / Year | Reference / ArXiv | Core Contribution to Red-Shield |
 | :--- | :--- | :--- | :--- |
 | **VulnBot: A Multi-Agent Collaborative Framework for Automated Penetration Testing** | Zhang et al. (2025) | [arXiv:2501.13411](https://arxiv.org/abs/2501.13411) | Decomposes security testing into specialized modules (Recon, Execution, Reporting). |
 | **CheckMate: Planner-Executor-Perceptor Paradigm for Long-Horizon Cyber Reasoning** | Liu et al. (2025) | [arXiv:2512.13411](https://arxiv.org/abs/2512.13411) | Introduces a **Perceptor** module that strips raw ANSI terminal escape sequences and extracts structured JSON state from noisy tool outputs. |

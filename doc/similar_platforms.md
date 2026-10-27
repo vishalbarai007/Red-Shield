@@ -1,8 +1,8 @@
-# Cyber-Cerberus (RedShield): Comparative Analysis of Similar Platforms
+# Red-Shield: Comparative Analysis of Similar Platforms
 
 ## 1. Executive Summary
 
-**Cyber-Cerberus** (with the **RedShield Exploitation Sandbox & Local SLM Engine**) occupies a unique position compared to commercial C2 frameworks, adversary emulation platforms, and cloud-LLM wrappers by combining:
+**Red-Shield** (incorporating the **Exploitation Sandbox & Local SLM Engine**) occupies a unique position compared to commercial C2 frameworks, adversary emulation platforms, and cloud-LLM wrappers by combining:
 1. **Decoupled Authorization Policy Gate** (`403 Target Blocked` enforcement before container spin-up).
 2. **Hardened Ephemeral Docker Sandboxing** (`read_only=True`, `cap_drop=ALL`, `0.5 CPU`, `512MB RAM`, `SIGKILL` killswitch).
 3. **Real-Time WebSocket Multiplexing** (`/ws/sandbox/{session_id}` -> `xterm.js`).
@@ -12,7 +12,7 @@
 
 ## 2. Feature Comparison Matrix
 
-| Feature / Capability | Cyber-Cerberus (RedShield) | Cobalt Strike | Sliver | Mythic | Caldera (MITRE) | PentestGPT |
+| Feature / Capability | Red-Shield | Cobalt Strike | Sliver | Mythic | Caldera (MITRE) | PentestGPT |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Hosting & Privacy Model** | 100% Local / Air-Gapped | TeamServer | Self-Hosted | Docker Multi-container | Local / Docker | Cloud OpenAI API |
 | **Decoupled Policy Gate** | ✅ Pre-Execution SQLite Gate (403 Block) | ❌ None | ❌ None | ⚠️ Manual scope | ⚠️ Operation config | ❌ Prompt-only |

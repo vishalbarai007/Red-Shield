@@ -54,14 +54,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="font-mono font-bold tracking-wider text-sm text-foreground flex items-center gap-1.5">
-              CYBER<span className="text-cyber-red font-black">CERBERUS</span>
+              RED<span className="text-cyber-red font-black">-SHIELD</span>
             </span>
             <span className="text-[11px] px-1.5 py-0.5 rounded font-mono font-medium bg-red-950/60 text-red-300 border border-red-800/50">
               v1.0-ALPHA
             </span>
           </div>
           <div className="text-[11px] text-cyber-muted font-mono tracking-wide">
-            RED TEAM OPERATIONS SUITE
+            RED TEAM OPERATION SUITE
           </div>
         </div>
       </div>

@@ -1,8 +1,8 @@
-# Cyber-Cerberus (RedShield): Operator User Flow & Interaction Journey
+# Red-Shield: Operator User Flow & Interaction Journey
 
 ## 1. Overview
 
-This document outlines the operational lifecycle, end-to-end user journeys, and state transitions of an operator using **Cyber-Cerberus** and the **RedShield Exploitation Sandbox & Local SLM Log Parser**.
+This document outlines the operational lifecycle, end-to-end user journeys, and state transitions of an operator using **Red-Shield** and its **Exploitation Sandbox & Local SLM Log Parser**.
 
 ---
 

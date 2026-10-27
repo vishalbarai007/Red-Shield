@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# RedShield / Cyber-Cerberus: Isolated Sandbox Network Setup
+# Red-Shield: Isolated Sandbox Network Setup
 # =============================================================================
 set -euo pipefail
 

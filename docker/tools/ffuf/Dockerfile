@@ -1,7 +1,7 @@
-# RedShield Diagnostic Container: Endpoint & SSRF Telemetry Simulator (Academic Safe Sandbox)
+# Red-Shield Diagnostic Container: Endpoint & SSRF Telemetry Simulator (Academic Safe Sandbox)
 FROM alpine:3.20
 
-LABEL maintainer="RedShield / Cyber-Cerberus Academic Project"
+LABEL maintainer="Red-Shield Academic Project"
 LABEL description="Isolated non-root diagnostic container emitting structured SSRF/Endpoint audit logs for SLM parsing"
 
 # Create non-root sandboxuser
@@ -14,7 +14,7 @@ RUN cat << 'EOF' > /app/run_diagnostic.sh
 TARGET="${TARGET_URL:-http://juice-shop.local/profile/image/url}"
 MODE="${SCAN_PROFILE:-vulnerable}"
 
-printf "\033[36m[*] Starting RedShield Endpoint & SSRF Surface Diagnostic v1.0 (Safe Academic Mode)\033[0m\n"
+printf "\033[36m[*] Starting Red-Shield Endpoint & SSRF Surface Diagnostic v1.0 (Safe Academic Mode)\033[0m\n"
 printf "\033[90m[*] Target Endpoint: %s\033[0m\n" "$TARGET"
 printf "\033[32m[+] Policy Gate Verification: PASSED (Authorized Lab Scope)\033[0m\n"
 sleep 0.1

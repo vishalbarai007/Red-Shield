@@ -1,4 +1,4 @@
-# RedShield / Cyber-Cerberus: Exploitation Sandbox & SLM Log Parser Progress Log
+# Red-Shield: Exploitation Sandbox & SLM Log Parser Progress Log
 
 > **Note:** In accordance with academic safety guidelines, all container tool images are implemented as isolated, non-root, read-only diagnostic simulation modules that emit realistic security telemetry logs for testing the WebSocket multiplexer, ANSI sanitizer, and local SLM parser without executing active offensive payloads.
 

@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Cyber-Cerberus // Red Team Operations Suite',
-  description: 'Locally-hosted, Multi-Modal Red Team Operations Suite Command Center',
+  title: 'Red-Shield // AI Red Team Operation Suite',
+  description: 'Red-Shield: Locally-hosted, Multi-Modal Red Team Operations Suite Command Center',
 };
 
 export default function RootLayout({
